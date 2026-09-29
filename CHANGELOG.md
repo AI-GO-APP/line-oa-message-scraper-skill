@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.0 — 2026-09-29
+
+新增自我更新機制（與 aigo-app-builder-skill 相同的機制與頻率）。
+
+- `scripts/check_update.py`：遠端 `VERSION` 較新時直接強制同步本機所有已註冊安裝；
+  遠端版本每 3 小時抓一次、比對每次都做；開發用副本（版本較高或非 main 分支）略過
+- SKILL.md 新增步驟 0：每次觸發先執行更新檢查
+- `resources/hooks/`：Claude Code、Codex 的 SessionStart hook 範本
+- README 改寫為完整文件，新增「維護者規則：PR 合併即發布」
+- `.github/workflows/release-check.yml`：PR 改到 Skill 內容時檢查 VERSION 前進與 CHANGELOG 小節
+
 ## 1.1.0 — 2026-09-29
 
 不開 Chrome 遠端除錯也能完整使用。
