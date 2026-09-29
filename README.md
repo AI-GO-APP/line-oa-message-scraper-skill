@@ -16,6 +16,7 @@
 - [維護者規則：PR 合併即發布](#維護者規則pr-合併即發布)
 - [目錄結構](#目錄結構)
 - [資料安全](#資料安全)
+- [License](#license)
 
 ## 功能
 
@@ -190,6 +191,9 @@ python scripts/check_update.py --check-only  # 只報告不同步（維護者／
 `main` 分支上的 `VERSION` 就是「已發布版本」。**PR 合併進 main 的那一刻就是發布**：
 使用者端最晚 3 小時內（或下一次觸發 Skill 時）會被自動強制同步到新版。所以進 main 的每個變更都要當成正式發布對待。
 
+> `main` **沒有開啟分支保護**，GitHub 不會強制擋下直推或 CI 未過的合併——以下規則靠每位維護者自行遵守。
+> `release-check` CI 失敗時請先修好再合併，不要略過。
+
 ### 規則
 
 1. **不直接推 main**，一律開分支、發 PR、合併。分支命名沿用 builder skill 的慣例：
@@ -240,6 +244,7 @@ line-oa-message-scraper-skill/
 ├── README.md                 # 本文件
 ├── VERSION                   # 已發布版本（更新檢查的比對基準）
 ├── CHANGELOG.md              # 版本變更紀錄
+├── LICENSE                   # MIT 授權
 ├── references/
 │   ├── api.md                # chat.line.biz 內部 API、事件結構、媒體網址規則、需避開的請求
 │   └── csv-schema.md         # CSV 欄位定義
@@ -257,3 +262,7 @@ line-oa-message-scraper-skill/
 - 輸出包含客戶個資與完整對話。請存放在受控位置，不要 commit 進任何 repo 或上傳到外部服務。
 - 不要把輸出資料夾放在 Skill 安裝目錄裡：自我更新會鏡像覆蓋該目錄（`line_oa_export/` 例外）。
 - 方式 B、C 的產出會先落在「下載」資料夾，匯入後記得移走。
+
+## License
+
+[MIT](LICENSE)
