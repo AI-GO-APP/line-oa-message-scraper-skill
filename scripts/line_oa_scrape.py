@@ -30,6 +30,7 @@ import socket
 import sys
 import time
 import urllib.request
+import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote, urlparse
@@ -588,9 +589,35 @@ def print_summary(summary: dict) -> None:
     log(f"CSV: {summary['csv']}  （共 {summary['rows']} 筆）")
 
 
+MEDIA_ENTRY_RE = re.compile(r"^media/(U[0-9a-f]{32})/([^/]+)/\d{8}_\d{6}_(\d+)_[^/]+$")
+
+
 def import_bundle(bundle_path: Path, out_dir: Path) -> list[str]:
-    """匯入 crawl_in_page.js 下載的資料包，展開成 raw/ 的標準結構。"""
-    bundle = json.loads(bundle_path.read_text(encoding="utf-8-sig"))
+    """匯入 crawl_in_page.js 的產出，展開成 raw/ 與 media/ 的標準結構。
+
+    接受 line_oa_bundle.json，或含 line_oa_bundle.json 與 media/ 的 line_oa_export.zip。
+    """
+    if bundle_path.suffix.lower() == ".zip":
+        with zipfile.ZipFile(bundle_path) as z:
+            bad = z.testzip()
+            if bad:
+                raise SystemExit(f"zip 內容損毀: {bad}")
+            bundle = json.loads(z.read("line_oa_bundle.json").decode("utf-8"))
+            indexes: dict[str, dict] = {}
+            for name in z.namelist():
+                m = MEDIA_ENTRY_RE.match(name)
+                if not m or ".." in name:
+                    continue  # 只接受預期格式的路徑，防止寫到輸出資料夾以外
+                target = out_dir / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(z.read(name))
+                indexes.setdefault(m.group(1), {})[m.group(3)] = name
+            for bot_id, idx in indexes.items():
+                index_path = out_dir / "media" / bot_id / "_index.json"
+                save_json(index_path, {**load_json(index_path, {}), **idx})
+                log(f"  媒體 {bot_id[:8]}: 解出 {len(idx)} 個檔案")
+    else:
+        bundle = json.loads(bundle_path.read_text(encoding="utf-8-sig"))
     bot_ids = []
     for bot_id, b in bundle["bots"].items():
         bot_dir = out_dir / "raw" / bot_id
@@ -726,7 +753,8 @@ def main() -> None:
     s.add_argument("--include-read-events", action="store_true", help="CSV 包含已讀事件")
 
     e = sub.add_parser("export", help="由資料包或既有原始資料重新產生 CSV")
-    e.add_argument("bundle", nargs="?", help="crawl_in_page.js 下載的 line_oa_bundle.json")
+    e.add_argument("bundle", nargs="?",
+                   help="crawl_in_page.js 下載的 line_oa_bundle.json 或 line_oa_export.zip")
     e.add_argument("--out", default="line_oa_export", help="輸出資料夾 (預設 line_oa_export)")
     e.add_argument("--include-read-events", action="store_true", help="CSV 包含已讀事件")
 

@@ -1,7 +1,8 @@
 # LINE OA Message Scraper Skill
 
 > 給 AI Agent（Claude Code / Codex / Cursor / Antigravity）用的 Skill：給一個 `chat.line.biz` 連結，
-> 就把該 LINE 官方帳號後台的**全部對話串與訊息**匯出成一份 CSV。**內部使用。**
+> 就把該 LINE 官方帳號後台的**全部對話串與訊息**匯出成一份 CSV。
+> 僅用於匯出你本人有管理權限的官方帳號資料。
 
 - 文字訊息、圖片／影片／檔案 URL（不論過期與否）、貼圖索引、群組成員與發送者名稱
 - 每個對話串往回翻到伺服器不再給資料為止；對話串列表與訊息都自動處理分頁（lazy loading）
@@ -32,12 +33,19 @@ git clone https://github.com/AI-GO-APP/line-oa-message-scraper-skill.git ~/.clau
 pip install -r scripts/requirements.txt
 ```
 
-## 一次性設定：讓腳本連上你的 Chrome
+## 三種執行方式（都用你已登入的 Chrome）
 
-Chrome 144 以上：在網址列開 `chrome://inspect/#remote-debugging`，開啟允許遠端除錯的選項。
-之後每次腳本連線，Chrome 會跳出確認視窗，按「允許」即可。
+| 方式 | 需要 | 特點 |
+|---|---|---|
+| **A. 腳本（CDP）** | 開啟 Chrome 遠端除錯（一次性） | 最穩：資料直接寫入本機、可中斷續爬 |
+| **B. Claude in Chrome 擴充功能** | agent 有 Claude in Chrome | 不需開遠端除錯；完成後下載一個檔案再轉 CSV |
+| **C. 自己貼進 Console** | 什麼都不用 | 按 F12 貼上 `scripts/crawl_in_page.js`，再轉 CSV |
 
-沒開也能用：若 agent 有 Claude in Chrome 擴充功能，Skill 會改走擴充功能路徑（不支援下載媒體檔）。
+Skill 會自動判斷用哪一種；三種都支援下載媒體檔。
+
+**開啟遠端除錯（方式 A，選用）**：Chrome 144 以上，在網址列開 `chrome://inspect/#remote-debugging`，
+開啟允許遠端除錯的選項。之後每次腳本連線，Chrome 會跳出確認視窗，按「允許」即可。
+這是瀏覽器安全設定，AI agent 無法也不會替你開啟。
 
 ## 使用
 
@@ -53,6 +61,7 @@ python scripts/line_oa_scrape.py list                                     # 列�
 python scripts/line_oa_scrape.py scrape https://chat.line.biz/Uxxxxxxxx   # 全量爬取
 python scripts/line_oa_scrape.py scrape --all --download-media --out ./backup
 python scripts/line_oa_scrape.py export --out ./backup                    # 由原始資料重新產生 CSV
+python scripts/line_oa_scrape.py export ~/Downloads/line_oa_export.zip --out ./backup   # 匯入方式 B／C 的產出
 ```
 
 | 參數 | 作用 |
@@ -88,7 +97,7 @@ line-oa-message-scraper-skill/
 │   └── csv-schema.md         # CSV 欄位定義
 └── scripts/
     ├── line_oa_scrape.py     # 主腳本：連上使用者的 Chrome（CDP）爬取、下載媒體、輸出 CSV
-    ├── crawl_in_page.js      # 瀏覽器內抓取腳本（Claude in Chrome 擴充功能路徑）
+    ├── crawl_in_page.js      # 瀏覽器內抓取腳本（方式 B、C；可含媒體，產出單一 zip）
     └── requirements.txt
 ```
 

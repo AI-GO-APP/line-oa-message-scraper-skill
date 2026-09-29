@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0 — 2026-09-29
+
+不開 Chrome 遠端除錯也能完整使用。
+
+- `crawl_in_page.js` 新增 `downloadMedia`：取回未過期的圖片／影片／檔案，與資料包打包成單一
+  `line_oa_export.zip` 只下載一次（避開 Chrome 擋同網站連續自動下載）
+- `export` 可直接匯入 `line_oa_export.zip`：校驗 CRC、解出媒體、建立索引並填入 CSV 的 `local_path`
+- SKILL.md 改為三條路徑（CDP 腳本／Claude in Chrome／使用者自貼 Console），並寫明 agent 不能代開遠端除錯
+
 ## 1.0.0 — 2026-09-29
 
 首次發布。

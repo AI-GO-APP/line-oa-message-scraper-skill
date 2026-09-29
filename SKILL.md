@@ -30,18 +30,25 @@ Chrome 裡把該 OA 的**全部對話串**、每串**翻到伺服器不再給資
 
 ### 步驟 2：選擇執行路徑（依序判斷）
 
+三條路徑都使用使用者自己已登入的 Chrome，產出相同（CSV、原始資料、可選的媒體檔）。
+
 | 條件 | 路徑 |
 |---|---|
-| `python <SKILL_DIR>/scripts/line_oa_scrape.py doctor` 顯示「連線與登入狀態正常」 | **路徑 A（主路徑）** |
-| doctor 找不到 Chrome 端點，但本 session 有 Claude in Chrome 工具（`mcp__claude-in-chrome__*`） | **路徑 B（擴充功能）** |
-| 兩者都沒有 | 請使用者開啟遠端除錯（見下），再回到路徑 A |
+| `python <SKILL_DIR>/scripts/line_oa_scrape.py doctor` 顯示「連線與登入狀態正常」 | **路徑 A：腳本（CDP）**——最穩：資料直接落地、可續爬 |
+| doctor 找不到 Chrome 端點，但本 session 有 Claude in Chrome 工具（`mcp__claude-in-chrome__*`） | **路徑 B：擴充功能**——不需要開遠端除錯 |
+| 兩者都沒有 | **路徑 C：使用者自己貼進 Console**——不需要任何工具；或請使用者開遠端除錯後走路徑 A |
 
-**請使用者開啟遠端除錯**（Chrome 144 以上，一次性設定）：在 Chrome 網址列開
-`chrome://inspect/#remote-debugging`，開啟允許遠端除錯的選項。之後每次腳本連線時 Chrome 會跳出確認
-視窗，請使用者按「允許」。**這是瀏覽器安全設定，agent 不可代為開啟。**
+**遠端除錯不是必要條件。** 沒開時走路徑 B 或 C，功能相同（含媒體下載），只是不能中斷續爬。
+要不要開由使用者決定；開的方法（Chrome 144 以上，一次性設定）：在 Chrome 網址列開
+`chrome://inspect/#remote-debugging`，開啟允許遠端除錯的選項；之後每次腳本連線 Chrome 會跳出確認
+視窗，按「允許」。
 
-首次使用需安裝依賴：`pip install -r <SKILL_DIR>/scripts/requirements.txt`（只有 Playwright；
-**不需要** `playwright install`，因為不啟動任何新瀏覽器）。
+**agent 不能、也不可以替使用者開啟遠端除錯**：這是瀏覽器安全設定；Claude in Chrome 無法操作
+`chrome://` 頁面，computer-use 對瀏覽器只有唯讀權限；Chrome 136 起對預設設定檔也不再接受
+`--remote-debugging-port` 啟動參數，重啟 Chrome 帶參數這條路也行不通。
+
+路徑 A 首次使用需安裝依賴：`pip install -r <SKILL_DIR>/scripts/requirements.txt`（只有 Playwright；
+**不需要** `playwright install`，因為不啟動任何新瀏覽器）。路徑 B、C 的 `export` 只用 Python 標準函式庫。
 
 ### 路徑 A：腳本連上使用者的 Chrome（CDP）
 
@@ -65,9 +72,10 @@ python <SKILL_DIR>/scripts/line_oa_scrape.py scrape https://chat.line.biz/Uxxxxx
    看到 JSON（含 `name`）才代表已登入；被導到 `account.line.biz` 就請使用者登入。
 2. 用 `javascript_tool` 執行：先一行設定，再接 `scripts/crawl_in_page.js` 的**完整內容**：
    ```js
-   window.__LINE_OA_CONFIG = { botIds: ['Uxxxxxxxx'], delayMs: 300, autoDownload: true };
+   window.__LINE_OA_CONFIG = { botIds: ['Uxxxxxxxx'], downloadMedia: false, delayMs: 300, autoDownload: true };
    // ↓ 接著貼上 crawl_in_page.js 全文
    ```
+   要媒體檔就設 `downloadMedia: true`（會先爬完訊息再逐一取回未過期媒體，全部在記憶體裡打包）。
    腳本立刻回傳 `started`，在背景執行。**單次 `javascript_tool` 呼叫約 45 秒逾時**，
    所以不要在同一次呼叫裡等它跑完。
 3. 輪詢進度（每次等 ≤ 30 秒）：
@@ -77,18 +85,32 @@ python <SKILL_DIR>/scripts/line_oa_scrape.py scrape https://chat.line.biz/Uxxxxx
    JSON.stringify({ status: S.status, error: S.error, progress: S.progress, requests: S.requests, summary: S.summary() })
    ```
    `javascript_tool` 回傳值約 1,000 字就會截斷，**只回摘要，不要回傳原始資料**。
-4. 完成後瀏覽器會自動下載 `line_oa_bundle.json` 到使用者的「下載」資料夾。若沒有出現，
-   多半是 Chrome 擋了同一網站的「多重自動下載」：請使用者在網址列右側的下載圖示允許，
-   再執行 `window.__lineOaCrawl.download()`。
-5. 轉 CSV：
+4. 完成後瀏覽器自動下載**一個**檔案到使用者的「下載」資料夾：沒要媒體是 `line_oa_bundle.json`，
+   要媒體是 `line_oa_export.zip`（內含資料包與 `media/`）。若沒有出現，多半是 Chrome 擋了同一網站的
+   「多重自動下載」：請使用者在網址列右側的下載圖示允許，再執行 `window.__lineOaCrawl.download()`。
+5. 轉 CSV（zip 會同時解出媒體並填入 CSV 的 `local_path`）：
    ```bash
-   python <SKILL_DIR>/scripts/line_oa_scrape.py export "<下載資料夾>/line_oa_bundle.json" --out <輸出資料夾>
+   python <SKILL_DIR>/scripts/line_oa_scrape.py export "<下載資料夾>/line_oa_export.zip" --out <輸出資料夾>
    ```
-   路徑 B 不支援下載媒體檔；需要媒體檔時改走路徑 A 加 `--download-media`。
+   匯入後把下載資料夾裡的檔案移走或提醒使用者，避免含個資的副本留在「下載」。
+
+限制：資料都暫存在分頁記憶體，中斷就得重跑；單一 zip 上限 65,535 個檔案、4 GB。
+媒體量很大的 OA 建議改走路徑 A。
+
+### 路徑 C：使用者自己在 Console 執行
+
+沒有任何瀏覽器工具時，請使用者：
+
+1. 在已登入的 Chrome 開 `https://chat.line.biz/api/v1/me`（看到 JSON 代表已登入）
+2. 按 F12 → Console，先貼上設定行（`window.__LINE_OA_CONFIG = {...}`，同路徑 B），
+   再貼上 `scripts/crawl_in_page.js` 全文，按 Enter
+   （Chrome 第一次貼上程式碼會要求先輸入 `allow pasting`）
+3. 等 Console 輸入 `__lineOaCrawl.status` 顯示 `'done'`，檔案會自動下載
+4. agent 接手執行路徑 B 的第 5 步
 
 ### 步驟 3：驗收與回報
 
-讀 `<輸出>/summary.json`（兩條路徑都會產生），向使用者回報：
+讀 `<輸出>/summary.json`（每條路徑都會產生），向使用者回報：
 
 - 每個 OA 的對話串數、**取不到任何訊息的對話串數**、事件筆數、最舊～最新時間
 - 媒體數與其中已過期數；有下載媒體時回報下載成功／失敗數
