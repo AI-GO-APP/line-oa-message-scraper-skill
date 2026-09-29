@@ -1,0 +1,9 @@
+# 爬取產出含客戶個資，一律不進版控
+line_oa_export/
+raw/
+media/
+*.csv
+*bundle*.json
+summary.json
+__pycache__/
+.venv/
