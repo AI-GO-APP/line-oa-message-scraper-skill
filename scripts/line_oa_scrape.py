@@ -415,6 +415,11 @@ def crawl_notes(api: Api, bot_id: str, bot_dir: Path, chat_id: str) -> None:
         path.unlink()
 
 
+def read_jsonl_lines(path: Path) -> list[str]:
+    """只用 \n 分行：訊息內的 U+2028／U+2029 等字元 str.splitlines() 也會切，JSON 會斷掉。"""
+    return path.read_text(encoding="utf-8").split("\n")
+
+
 def media_url(bot_id: str, msg: dict) -> tuple[str, str]:
     """回傳 (content_url, preview_url)。不論是否過期都組出網址。"""
     provider = msg.get("contentProvider") or {}
@@ -446,7 +451,7 @@ def download_media(tab: LiveTab, out_dir: Path, bot_ids: list[str], delay: float
         ok = skipped = fail = 0
         for msg_path in sorted(bot_dir.glob("*.jsonl")):
             chat_id = msg_path.stem
-            for line in msg_path.read_text(encoding="utf-8").splitlines():
+            for line in read_jsonl_lines(msg_path):
                 if not line.strip():
                     continue
                 ev = json.loads(line)
@@ -601,7 +606,7 @@ def export_csv(out_dir: Path, bot_ids: list[str], include_read_events: bool) -> 
                            load_json(bot_dir / f"{chat['chatId']}.members.json", [])}
                 seen, events = set(), []
                 if msg_path.exists():
-                    for line in msg_path.read_text(encoding="utf-8").splitlines():
+                    for line in read_jsonl_lines(msg_path):
                         if not line.strip():
                             continue
                         ev = json.loads(line)

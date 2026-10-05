@@ -12,6 +12,8 @@
 - `crawl_in_page.js` 同步抓上述資料，新增 `limitChats` 試跑參數
 - `crawl_in_page.js` 的等待改用 Web Worker 計時：分頁在背景時不再被 Chrome 降速到每秒 1 個請求以下
 - 摘要新增好友名單人數、沒有對話串的人數、記事本與標籤數
+- 修正：訊息含 U+2028／U+2029 時 `export` 讀 `.jsonl` 會切斷 JSON（改為只用 `
+` 分行）
 
 ## 1.2.0 — 2026-09-29
 
