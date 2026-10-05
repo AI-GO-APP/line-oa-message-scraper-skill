@@ -10,6 +10,7 @@
 - 標籤定義（`/tags`）→ `_tags.json`；主 CSV 新增 `chat_tags`、`assigned_to` 兩欄（加在最後，舊欄位不變）
 - `bizId=__AUTO_RESPONSE` 標成「自動回應」，不再當成管理員；管理員已被移除時標「（已移除的管理員 …）」，不再冒用 OA 名稱
 - `crawl_in_page.js` 同步抓上述資料，新增 `limitChats` 試跑參數
+- `crawl_in_page.js` 的等待改用 Web Worker 計時：分頁在背景時不再被 Chrome 降速到每秒 1 個請求以下
 - 摘要新增好友名單人數、沒有對話串的人數、記事本與標籤數
 
 ## 1.2.0 — 2026-09-29

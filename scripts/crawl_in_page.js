@@ -24,7 +24,21 @@
     { botIds: [], all: false, downloadMedia: false, delayMs: 300, autoDownload: true, limitChats: 0 },
     window.__LINE_OA_CONFIG || {});
   const FOLDERS = ['ALL', 'SPAM', 'DONE'];
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  // 背景分頁的計時器會被 Chrome 降速（每秒最多一次，久了每分鐘一次）；Worker 裡的計時器不受影響
+  let timer = null;
+  try {
+    const src = 'onmessage = e => setTimeout(() => postMessage(e.data.id), e.data.ms)';
+    timer = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+  } catch (e) { timer = null; }
+  const waits = new Map();
+  let waitId = 0;
+  if (timer) timer.onmessage = e => { const r = waits.get(e.data); waits.delete(e.data); if (r) r(); };
+  const sleep = ms => new Promise(r => {
+    if (!timer) return setTimeout(r, ms);
+    const id = ++waitId;
+    waits.set(id, r);
+    timer.postMessage({ id, ms });
+  });
   const S = (window.__lineOaCrawl = {
     status: 'running', progress: '', requests: 0, warnings: [], bots: {},
     media: { total: 0, ok: 0, expired: 0, failed: [] }, startedAt: Date.now(),
