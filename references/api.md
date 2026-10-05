@@ -16,6 +16,9 @@
 | 對話串列表 | `GET /api/v2/bots/{botId}/chats?folderType={ALL\|SPAM\|DONE}&limit=25` | 回應 `next`，下一頁帶 `&next=` |
 | 群組成員 | `GET /api/v1/bots/{botId}/chats/{chatId}/members?limit=100` | 回應 `next` |
 | 對話事件 | `GET /api/v3/bots/{botId}/chats/{chatId}/messages` | 回應 `backward`，往更舊翻頁帶 `?backward=` |
+| 標籤定義（`tagId` → 名稱） | `GET /api/v1/bots/{botId}/tags` | 無 |
+| 好友名單（含從未聊過天的好友） | `GET /api/v2/bots/{botId}/contacts?limit=100` | 回應 `next` |
+| 對話串記事本 | `GET /api/v1/bots/{botId}/chats/{chatId}/notes?limit=100` | 回應 `next`（另可帶 `withTotal=true`） |
 
 - 第一頁是最新的事件，`backward` 往回翻；**回應沒有 `backward` 就是到底了**。
 - `backward` 帶錯會回 `400 {"code":"malformed_next_token"}`。
@@ -32,6 +35,7 @@
 
 - `PUT /api/v2/bots/{botId}/chats/{chatId}/markAsRead` —— 標為已讀，並改動 `lastTalkedAt`
 - `PUT /api/v1/bots/{botId}/streaming/state` —— 載入後台介面時送出
+- `PUT /api/v1/bots/{botId}/chats/{chatId}/activities/markAsRead` —— 開啟對話串的活動紀錄時送出
 
 所以腳本一律停在 `/api/v1/me` 這個 JSON 頁面，不載入後台介面。
 
@@ -47,6 +51,19 @@ latestEvent (GROUP 才有)
 
 增量判斷用 `max(lastReceivedAt, lastSentAt, updatedAt)`。`lastTalkedAt` 會被已讀動作改動，不可用。
 
+列表與單串（`GET /api/v1/bots/{botId}/chats/{chatId}`）另有客服欄位：`tagIds`／`autoTagIds`（對 `tags` 端點取名稱）、
+`assignedBizId`（指派給哪位管理員，對 `owners`）、`followedUp`（待處理）、`done`、`spam`、`lastReadAt`。
+
+## 好友名單物件（contacts 的 list 元素）
+
+```
+contactId (= userId), profile{userId, name, friend, iconHash, lastActivityExpiresAt},
+tagIds, autoTagIds, done, followedUp, spam, friend, useManualChat, chatAvailable, chatExists
+```
+
+`chatExists=false` 的好友沒有對話串（加了好友但從沒傳過訊息）。封鎖的人不在好友名單、只在對話串列表，
+兩者合併才是完整的客人名單。2026-10 實測：5,672 位好友中 2,452 位沒有對話串。
+
 ## 事件物件（messages 的 list 元素）
 
 共同欄位：`type`、`timestamp`（毫秒）、`source: {chatId, userId?}`。
@@ -54,7 +71,7 @@ latestEvent (GROUP 才有)
 | `type` | 說明 | 重要欄位 |
 |---|---|---|
 | `message` | 對方（用戶或群組成員）傳入 | `message` |
-| `messageSent` | OA 傳出 | `message`、`bizId`（哪位管理員；自動回應沒有）、`sendId` |
+| `messageSent` | OA 傳出 | `message`、`bizId`（哪位管理員）、`sendId`（後台手動送出才有） |
 | `unsend` | 收回 | `unsend.messageId` |
 | `chatRead` | 對方已讀 | `read.watermark` |
 | `follow` / `unfollow` | 加入／封鎖好友 | — |
@@ -72,6 +89,14 @@ latestEvent (GROUP 才有)
 | `unsent` | 只剩 `id`（已收回的原訊息） |
 
 `contentProvider.type` 為 `external` 時改帶 `originalContentUrl`、`previewImageUrl`（外部 URL）。
+
+`messageSent.bizId` 的值：
+
+| 值 | 意思 |
+|---|---|
+| 管理員 ID（UUID） | 該管理員在後台手動回覆，對 `owners` 取名稱；不在 `owners` 的是已移除的管理員 |
+| `__AUTO_RESPONSE` | 後台的自動回應（關鍵字／AI 自動回應） |
+| 沒有 | Messaging API、加入好友歡迎訊息等非後台送出的訊息 |
 
 ## 媒體網址
 

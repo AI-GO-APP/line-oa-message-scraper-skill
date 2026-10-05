@@ -137,7 +137,8 @@ python <SKILL_DIR>/scripts/line_oa_scrape.py scrape https://chat.line.biz/Uxxxxx
 - 每個 OA 的對話串數、**取不到任何訊息的對話串數**、事件筆數、最舊～最新時間
 - 媒體數與其中已過期數；有下載媒體時回報下載成功／失敗數
 - 被略過的 OA（非 CHAT 模式、無權限）與原因
-- CSV 路徑
+- 好友名單人數（其中沒有對話串的人數）、記事本則數、標籤數
+- CSV 路徑（主檔、`_contacts.csv`、有記事本時的 `_notes.csv`）
 
 回報前抽查 CSV：訊息列的 `sender_name` 應幾乎都有值、媒體列都有 `content_url`、
 貼圖列都有 `sticker_package_id` 與 `sticker_id`。
@@ -150,7 +151,7 @@ python <SKILL_DIR>/scripts/line_oa_scrape.py scrape https://chat.line.biz/Uxxxxx
 | 已過期的媒體 URL 打不開（404） | 檔案已從 LINE 伺服器刪除。URL 仍照樣輸出，`content_expired=Y` |
 | 媒體 URL 在未登入的瀏覽器打不開 | `chat-content.line.biz` 需要後台登入 cookie；貼圖 URL 則是公開的 |
 | OA 被略過並顯示 `not_chat_mode_bot` | 該 OA 的回應模式是 BOT（聊天功能關閉），後台沒有對話可讀 |
-| OA 傳出的訊息沒有管理員名字 | 自動回應或 Messaging API 送出的訊息沒有 `bizId`，`sender_name` 填 OA 名稱 |
+| OA 傳出的訊息沒有管理員名字 | 自動回應的 `bizId` 是 `__AUTO_RESPONSE`（`sender_name` 填「自動回應」）；Messaging API、歡迎訊息沒有 `bizId`，`sender_name` 填 OA 名稱 |
 | 群組的成員清單查不到 | 已退出的群組回 404，不影響訊息本身 |
 
 ## 輸出結構
@@ -158,10 +159,13 @@ python <SKILL_DIR>/scripts/line_oa_scrape.py scrape https://chat.line.biz/Uxxxxx
 ```
 <輸出資料夾>/
 ├── line_oa_<時間戳>.csv      # 主產出，UTF-8 BOM（Excel 可直接開）
+├── line_oa_<時間戳>_contacts.csv  # 好友名單（含從未聊過天的好友）
+├── line_oa_<時間戳>_notes.csv     # 記事本（有才產生）
 ├── summary.json              # 匯出摘要
 ├── raw/<botId>/              # 原始 JSON（調整欄位時用 export 重新產生 CSV，不必重爬）
-│   ├── _bot.json  _chats.json  _state.json
+│   ├── _bot.json  _chats.json  _state.json  _tags.json  _contacts.json
 │   ├── <chatId>.jsonl        # 每行一個事件
+│   ├── <chatId>.notes.json   # 記事本（有才產生）
 │   └── <chatId>.members.json # 群組成員
 └── media/<botId>/<chatId>/   # 只有 --download-media 才有
 ```

@@ -51,7 +51,12 @@ CSV_COLUMNS = [
     "file_name", "file_size", "duration_ms", "local_path",
     "sticker_package_id", "sticker_id", "sticker_resource_type", "sticker_url",
     "quoted_message_id", "raw_json",
+    "chat_tags", "assigned_to",
 ]
+NOTES_COLUMNS = ["bot_id", "chat_id", "chat_name", "note_id", "created_at", "updated_at",
+                 "author_id", "author_name", "content", "raw_json"]
+CONTACTS_COLUMNS = ["bot_id", "user_id", "name", "friend", "chat_exists", "tags", "assigned_to",
+                    "done", "followed_up", "spam", "last_received_at", "last_sent_at", "raw_json"]
 
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -312,6 +317,7 @@ def crawl_bot(api: Api, bot_id: str, out_dir: Path, limit_chats: int | None) -> 
     bot_dir = out_dir / "raw" / bot_id
     bot_dir.mkdir(parents=True, exist_ok=True)
     _, owners = api.get(f"/api/v1/bots/{bot_id}/owners", allow_status=(403,))
+    crawl_crm_extras(api, bot_id, bot_dir)
 
     chats: dict[str, dict] = {}
     for folder in FOLDERS:
@@ -340,6 +346,9 @@ def crawl_bot(api: Api, bot_id: str, out_dir: Path, limit_chats: int | None) -> 
         st = state.get(chat_id, {})
         msg_path = bot_dir / f"{chat_id}.jsonl"
         label = f"  [{i}/{len(chat_list)}] {name[:20]}"
+
+        # 記事本不會改動對話串的時間，每次都重抓（每串通常一頁）
+        crawl_notes(api, bot_id, bot_dir, chat_id)
 
         if st.get("done") and st.get("marker") == marker and msg_path.exists():
             log(f"{label}: 無新訊息，沿用 ({st.get('count', 0)} 則)")
@@ -379,6 +388,31 @@ def crawl_bot(api: Api, bot_id: str, out_dir: Path, limit_chats: int | None) -> 
                     break
         log(f"{label}: {count} 則 (到底)")
     return bot
+
+
+def crawl_crm_extras(api: Api, bot_id: str, bot_dir: Path) -> None:
+    """客服資料：標籤定義、好友名單（含從未聊過天的好友）。對話串的指派人員與標籤在 _chats.json。"""
+    _, tags = api.get(f"/api/v1/bots/{bot_id}/tags", allow_status=(403, 404))
+    save_json(bot_dir / "_tags.json", tags.get("list", []))
+    contacts: dict[str, dict] = {}
+    for page in api.paged(f"/api/v2/bots/{bot_id}/contacts?limit=100", "next", allow_status=(400, 403, 404)):
+        for c in page:
+            contacts.setdefault(c.get("contactId"), c)
+        log(f"  好友名單: {len(contacts)}", end="\r")
+    save_json(bot_dir / "_contacts.json", list(contacts.values()))
+    log(f"  好友名單: {len(contacts)} 人；標籤 {len(tags.get('list', []))} 個")
+
+
+def crawl_notes(api: Api, bot_id: str, bot_dir: Path, chat_id: str) -> None:
+    notes = []
+    for page in api.paged(f"/api/v1/bots/{bot_id}/chats/{chat_id}/notes?limit=100", "next",
+                          allow_status=(400, 403, 404)):
+        notes.extend(page)
+    path = bot_dir / f"{chat_id}.notes.json"
+    if notes:
+        save_json(path, notes)
+    elif path.exists():
+        path.unlink()
 
 
 def media_url(bot_id: str, msg: dict) -> tuple[str, str]:
@@ -464,8 +498,23 @@ def event_key(ev: dict) -> str:
     return json.dumps(ev, sort_keys=True, ensure_ascii=False)
 
 
+SYSTEM_SENDERS = {"__AUTO_RESPONSE": "自動回應"}  # 後台以 __ 開頭的 bizId 標示非真人送出
+
+
+def owner_name(owners: dict, biz_id: str | None) -> str:
+    if not biz_id:
+        return ""
+    if biz_id.startswith("__"):
+        return SYSTEM_SENDERS.get(biz_id, biz_id.strip("_"))
+    return owners.get(biz_id) or f"（已移除的管理員 {biz_id[:8]}）"
+
+
+def tag_names(tags: dict, ids) -> str:
+    return "、".join(tags.get(t, t) for t in (ids or []))
+
+
 def build_row(ev: dict, bot_id: str, bot_name: str, chat: dict,
-              members: dict, owners: dict, media_index: dict) -> dict:
+              members: dict, owners: dict, media_index: dict, tags: dict | None = None) -> dict:
     profile = chat.get("profile") or {}
     msg = ev.get("message") or {}
     src = ev.get("source") or {}
@@ -476,7 +525,7 @@ def build_row(ev: dict, bot_id: str, bot_name: str, chat: dict,
         direction = "OA傳出"
         sender_id = ev.get("bizId") or sender_id
         # 沒有 bizId 的是自動回應或 Messaging API 送出的訊息
-        sender_name = owners.get(ev.get("bizId"), "") or bot_name
+        sender_name = owner_name(owners, ev.get("bizId")) or bot_name
     elif etype == "message":
         direction = "對方傳入"
         sender_name = profile.get("name", "") if chat.get("chatType") == "USER" \
@@ -497,6 +546,8 @@ def build_row(ev: dict, bot_id: str, bot_name: str, chat: dict,
         "text": msg.get("text", ""),
         "quoted_message_id": msg.get("quotedMessageId", ""),
         "raw_json": json.dumps(ev, ensure_ascii=False),
+        "chat_tags": tag_names(tags or {}, (chat.get("tagIds") or []) + (chat.get("autoTagIds") or [])),
+        "assigned_to": owner_name(owners, chat.get("assignedBizId")),
     })
 
     url, preview = media_url(bot_id, msg)
@@ -539,9 +590,11 @@ def export_csv(out_dir: Path, bot_ids: list[str], include_read_events: bool) -> 
             owners = {o.get("bizId"): o.get("name", "") for o in meta.get("owners", [])}
             media_index = load_json(out_dir / "media" / bot_id / "_index.json", {})
             chats = load_json(bot_dir / "_chats.json", [])
+            tags = {t.get("tagId"): t.get("name", "") for t in load_json(bot_dir / "_tags.json", [])}
             s = {"bot_id": bot_id, "bot_name": bot_name, "chats": len(chats),
                  "empty_chats": 0, "rows": 0, "by_type": {}, "media": 0,
-                 "media_expired": 0, "oldest": None, "newest": None}
+                 "media_expired": 0, "oldest": None, "newest": None,
+                 "unknown_admins": 0, "notes": 0, "tags": len(tags)}
             for chat in chats:
                 msg_path = bot_dir / f"{chat['chatId']}.jsonl"
                 members = {m.get("userId"): m.get("name", "") for m in
@@ -562,8 +615,10 @@ def export_csv(out_dir: Path, bot_ids: list[str], include_read_events: bool) -> 
                     s["empty_chats"] += 1
                 events.sort(key=lambda e: e.get("timestamp") or 0)
                 for ev in events:
-                    row = build_row(ev, bot_id, bot_name, chat, members, owners, media_index)
+                    row = build_row(ev, bot_id, bot_name, chat, members, owners, media_index, tags)
                     writer.writerow(row)
+                    biz = ev.get("bizId") or ""
+                    s["unknown_admins"] += bool(biz) and not biz.startswith("__") and biz not in owners
                     k = f"{row['event_type']}/{row['message_type'] or '-'}"
                     s["by_type"][k] = s["by_type"].get(k, 0) + 1
                     if row["content_url"]:
@@ -575,8 +630,64 @@ def export_csv(out_dir: Path, bot_ids: list[str], include_read_events: bool) -> 
                 s["rows"] += len(events)
             summary["bots"].append(s)
     summary["rows"] = sum(b["rows"] for b in summary["bots"])
+    export_crm_csv(out_dir, bot_ids, stamp, summary)
     save_json(out_dir / "summary.json", summary)
     return csv_path, summary
+
+
+def export_crm_csv(out_dir: Path, bot_ids: list[str], stamp: str, summary: dict) -> None:
+    """記事本與好友名單各一份 CSV（沒有資料就不產生）。好友名單＝contacts ∪ 對話串（封鎖者只在對話串）。"""
+    notes_rows, contact_rows = [], []
+    for bot_id in bot_ids:
+        bot_dir = out_dir / "raw" / bot_id
+        meta = load_json(bot_dir / "_bot.json", {})
+        owners = {o.get("bizId"): o.get("name", "") for o in meta.get("owners", [])}
+        tags = {t.get("tagId"): t.get("name", "") for t in load_json(bot_dir / "_tags.json", [])}
+        chats = {c["chatId"]: c for c in load_json(bot_dir / "_chats.json", [])}
+        s = next(b for b in summary["bots"] if b["bot_id"] == bot_id)
+        for path in sorted(bot_dir.glob("*.notes.json")):
+            chat_id = path.name.split(".")[0]
+            name = ((chats.get(chat_id) or {}).get("profile") or {}).get("name", "")
+            for n in load_json(path, []):
+                author = n.get("bizId") or (n.get("author") or {}).get("bizId") or ""
+                notes_rows.append({
+                    "bot_id": bot_id, "chat_id": chat_id, "chat_name": name,
+                    "note_id": n.get("noteId") or n.get("id", ""),
+                    "created_at": fmt_ts(n.get("createdAt")), "updated_at": fmt_ts(n.get("updatedAt")),
+                    "author_id": author, "author_name": owner_name(owners, author),
+                    "content": n.get("content") or n.get("text", ""),
+                    "raw_json": json.dumps(n, ensure_ascii=False)})
+                s["notes"] += 1
+        contacts = load_json(bot_dir / "_contacts.json", [])
+        seen = set()
+        for c in contacts + [{"contactId": k, **v, "chatExists": True} for k, v in chats.items()]:
+            uid = c.get("contactId") or (c.get("profile") or {}).get("userId")
+            if not uid or uid in seen:
+                continue
+            seen.add(uid)
+            chat = chats.get(uid) or {}
+            prof = c.get("profile") or {}
+            contact_rows.append({
+                "bot_id": bot_id, "user_id": uid, "name": prof.get("name", ""),
+                "friend": "Y" if c.get("friend", prof.get("friend")) else "N",
+                "chat_exists": "Y" if (c.get("chatExists") or chat) else "N",
+                "tags": tag_names(tags, (c.get("tagIds") or []) + (c.get("autoTagIds") or [])),
+                "assigned_to": owner_name(owners, chat.get("assignedBizId")),
+                "done": "Y" if c.get("done") else "N", "followed_up": "Y" if c.get("followedUp") else "N",
+                "spam": "Y" if c.get("spam") else "N",
+                "last_received_at": fmt_ts(chat.get("lastReceivedAt")), "last_sent_at": fmt_ts(chat.get("lastSentAt")),
+                "raw_json": json.dumps(c, ensure_ascii=False)})
+        s["contacts"] = len(seen)
+        s["contacts_without_chat"] = sum(1 for c in contacts if c.get("contactId") not in chats)
+    for rows, cols, suffix in ((notes_rows, NOTES_COLUMNS, "notes"), (contact_rows, CONTACTS_COLUMNS, "contacts")):
+        if not rows:
+            continue
+        path = out_dir / f"line_oa_{stamp}_{suffix}.csv"
+        with path.open("w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=cols)
+            w.writeheader()
+            w.writerows(rows)
+        summary[f"{suffix}_csv"] = str(path.resolve())
 
 
 def print_summary(summary: dict) -> None:
@@ -586,6 +697,10 @@ def print_summary(summary: dict) -> None:
         log(f"  對話串 {b['chats']}（其中 {b['empty_chats']} 個取不到任何訊息）")
         log(f"  事件 {b['rows']} 筆，時間 {b['oldest']} ~ {b['newest']}")
         log(f"  媒體 {b['media']} 個，其中已過期 {b['media_expired']} 個")
+        log(f"  好友名單 {b.get('contacts', 0)} 人（其中 {b.get('contacts_without_chat', 0)} 人沒有對話串）；"
+            f"記事本 {b.get('notes', 0)} 則；標籤 {b.get('tags', 0)} 個")
+        if b.get("unknown_admins"):
+            log(f"  ⚠ {b['unknown_admins']} 則 OA 傳出訊息的管理員已不在管理員名單（名稱無法對應）")
     log(f"CSV: {summary['csv']}  （共 {summary['rows']} 筆）")
 
 
@@ -624,6 +739,11 @@ def import_bundle(bundle_path: Path, out_dir: Path) -> list[str]:
         bot_dir.mkdir(parents=True, exist_ok=True)
         save_json(bot_dir / "_bot.json", {"bot": b["bot"], "owners": b.get("owners", [])})
         save_json(bot_dir / "_chats.json", b["chats"])
+        save_json(bot_dir / "_tags.json", b.get("tags", []))
+        save_json(bot_dir / "_contacts.json", b.get("contacts", []))
+        for chat_id, notes in b.get("notes", {}).items():
+            if notes:
+                save_json(bot_dir / f"{chat_id}.notes.json", notes)
         for chat_id, members in b.get("members", {}).items():
             save_json(bot_dir / f"{chat_id}.members.json", members)
         for chat_id, events in b.get("events", {}).items():
