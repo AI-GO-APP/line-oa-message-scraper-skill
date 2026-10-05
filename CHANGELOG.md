@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.3.0 — 2026-10-05
+
+一併抓客服資料，匯入 CRM 不漏人。
+
+- 好友名單（`/api/v2/bots/{botId}/contacts`）：含加了好友但從沒傳過訊息的人；與對話串列表合併輸出
+  `line_oa_<時間戳>_contacts.csv`（一人一列，含好友狀態、標籤、指派、已完成／待處理／垃圾訊息）
+- 每個對話串的記事本（`/notes`）→ `<chatId>.notes.json` 與 `line_oa_<時間戳>_notes.csv`；記事本不會改動對話串時間，續爬時每串重抓
+- 標籤定義（`/tags`）→ `_tags.json`；主 CSV 新增 `chat_tags`、`assigned_to` 兩欄（加在最後，舊欄位不變）
+- `bizId=__AUTO_RESPONSE` 標成「自動回應」，不再當成管理員；管理員已被移除時標「（已移除的管理員 …）」，不再冒用 OA 名稱
+- `crawl_in_page.js` 同步抓上述資料，新增 `limitChats` 試跑參數
+- `crawl_in_page.js` 的等待改用 Web Worker 計時：分頁在背景時不再被 Chrome 降速到每秒 1 個請求以下
+- 摘要新增好友名單人數、沒有對話串的人數、記事本與標籤數
+- 修正：訊息含 U+2028／U+2029 時 `export` 讀 `.jsonl` 會切斷 JSON（改為只用 `
+` 分行）
+
 ## 1.2.0 — 2026-09-29
 
 新增自我更新機制（與 aigo-app-builder-skill 相同的機制與頻率）。

@@ -26,3 +26,34 @@
 | `sticker_url` | 貼圖圖片（公開 CDN，靜態 PNG） |
 | `quoted_message_id` | 回覆引用的訊息 ID |
 | `raw_json` | 事件原始 JSON，保底未預期的類型與欄位 |
+| `chat_tags` | 這個對話串目前的標籤名稱（`、` 分隔；含自動標籤） |
+| `assigned_to` | 這個對話串目前指派給哪位管理員 |
+
+`sender_name` 的 OA 傳出值：管理員名稱；`__AUTO_RESPONSE` 填「自動回應」；沒有 `bizId` 填 OA 名稱；
+管理員已被移除時填「（已移除的管理員 xxxxxxxx）」。
+
+## 好友名單 `line_oa_<時間戳>_contacts.csv`
+
+好友名單（含從未聊過天的好友）與對話串列表的聯集，一人一列。
+
+| 欄位 | 說明 |
+|---|---|
+| `bot_id` / `user_id` / `name` | OA、LINE userId、顯示名稱 |
+| `friend` | `Y`＝目前是好友；`N`＝已封鎖或不是好友 |
+| `chat_exists` | 有沒有對話串 |
+| `tags` / `assigned_to` | 標籤名稱、指派的管理員 |
+| `done` / `followed_up` / `spam` | 後台的已完成／待處理／垃圾訊息標記 |
+| `last_received_at` / `last_sent_at` | 最後收到／傳出的時間（台北時間；沒有對話串時空白） |
+| `raw_json` | 原始 JSON |
+
+## 記事本 `line_oa_<時間戳>_notes.csv`
+
+後台對話串右側的記事本，一則一列；沒有任何記事本時不產生這個檔案。
+
+| 欄位 | 說明 |
+|---|---|
+| `bot_id` / `chat_id` / `chat_name` | 哪個對話串 |
+| `note_id` / `created_at` / `updated_at` | 記事 ID 與時間（台北時間） |
+| `author_id` / `author_name` | 撰寫的管理員 |
+| `content` | 內容 |
+| `raw_json` | 原始 JSON |

@@ -10,6 +10,7 @@
 //     all: false,            // true 時抓帳號下所有 CHAT 模式的 OA
 //     downloadMedia: false,  // true 時一併下載未過期的圖片／影片／檔案
 //     delayMs: 300,          // 每次請求間隔
+//     limitChats: 0,         // 每個 OA 只抓前 N 個對話串（試跑用，0＝全部）
 //     autoDownload: true,    // 完成後自動下載結果
 //   };
 // 進度: window.__lineOaCrawl.status 為 running / done / error，progress 為文字進度，summary() 為摘要。
@@ -20,10 +21,24 @@
 //   失敗或被擋時可呼叫 window.__lineOaCrawl.download() 重新下載。
 (() => {
   const cfg = Object.assign(
-    { botIds: [], all: false, downloadMedia: false, delayMs: 300, autoDownload: true },
+    { botIds: [], all: false, downloadMedia: false, delayMs: 300, autoDownload: true, limitChats: 0 },
     window.__LINE_OA_CONFIG || {});
   const FOLDERS = ['ALL', 'SPAM', 'DONE'];
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  // 背景分頁的計時器會被 Chrome 降速（每秒最多一次，久了每分鐘一次）；Worker 裡的計時器不受影響
+  let timer = null;
+  try {
+    const src = 'onmessage = e => setTimeout(() => postMessage(e.data.id), e.data.ms)';
+    timer = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+  } catch (e) { timer = null; }
+  const waits = new Map();
+  let waitId = 0;
+  if (timer) timer.onmessage = e => { const r = waits.get(e.data); waits.delete(e.data); if (r) r(); };
+  const sleep = ms => new Promise(r => {
+    if (!timer) return setTimeout(r, ms);
+    const id = ++waitId;
+    waits.set(id, r);
+    timer.postMessage({ id, ms });
+  });
   const S = (window.__lineOaCrawl = {
     status: 'running', progress: '', requests: 0, warnings: [], bots: {},
     media: { total: 0, ok: 0, expired: 0, failed: [] }, startedAt: Date.now(),
@@ -92,7 +107,8 @@
       const events = Object.values(b.events).flat();
       const ts = events.map(e => e.timestamp).filter(Boolean);
       return {
-        name: b.bot.name, chats: b.chats.length,
+        name: b.bot.name, chats: b.chats.length, contacts: b.contacts.length,
+        notes: Object.values(b.notes).flat().length, tags: b.tags.length,
         emptyChats: Object.values(b.events).filter(e => !e.length).length,
         events: events.length,
         oldest: ts.length ? new Date(Math.min(...ts)).toISOString() : null,
@@ -218,7 +234,16 @@
         const owners = await get(`/api/v1/bots/${botId}/owners`, [403]);
         const B = (S.bots[botId] = {
           bot: info.data, owners: owners.data.list || [], chats: [], members: {}, events: {},
+          tags: [], contacts: [], notes: {},
         });
+        // 客服資料：標籤定義、好友名單（含從未聊過天的好友）
+        const tags = await get(`/api/v1/bots/${botId}/tags`, [403, 404]);
+        B.tags = (tags.data && tags.data.list) || [];
+        const seenContacts = new Set();
+        await paged(`/api/v2/bots/${botId}/contacts?limit=100`, 'next', l => {
+          for (const c of l) if (!seenContacts.has(c.contactId)) { seenContacts.add(c.contactId); B.contacts.push(c); }
+          S.progress = `${B.bot.name}: 好友名單 ${B.contacts.length} 人`;
+        }, [400, 403, 404]);
 
         const seen = new Set();
         for (const folder of FOLDERS) {
@@ -227,6 +252,7 @@
           }, [400]);
         }
 
+        if (cfg.limitChats > 0) B.chats = B.chats.slice(0, cfg.limitChats);
         let i = 0;
         for (const c of B.chats) {
           i++;
@@ -236,6 +262,10 @@
             await paged(`/api/v1/bots/${botId}/chats/${c.chatId}/members?limit=100`, 'next',
               l => m.push(...l), [403, 404]);
           }
+          const notes = [];
+          await paged(`/api/v1/bots/${botId}/chats/${c.chatId}/notes?limit=100`, 'next',
+            l => notes.push(...l), [400, 403, 404]);
+          if (notes.length) B.notes[c.chatId] = notes;
           const ev = (B.events[c.chatId] = []);
           await paged(`/api/v3/bots/${botId}/chats/${c.chatId}/messages`, 'backward', l => {
             ev.push(...l);

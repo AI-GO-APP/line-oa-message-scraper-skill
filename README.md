@@ -121,6 +121,8 @@ python scripts/line_oa_scrape.py export --out ./backup                    # 由�
 ```
 <輸出資料夾>/
 ├── line_oa_<時間戳>.csv      # 主產出，UTF-8 BOM（Excel 可直接開）
+├── line_oa_<時間戳>_contacts.csv  # 好友名單（含從未聊過天的好友）
+├── line_oa_<時間戳>_notes.csv     # 記事本（有才產生）
 ├── summary.json              # 每個 OA 的對話串數、空對話串數、事件數、時間範圍、媒體數
 ├── raw/<botId>/              # 原始 JSON；調整欄位時用 export 重新產生 CSV，不必重爬
 │   ├── _bot.json  _chats.json  _state.json
