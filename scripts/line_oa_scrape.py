@@ -649,13 +649,13 @@ def export_crm_csv(out_dir: Path, bot_ids: list[str], stamp: str, summary: dict)
             chat_id = path.name.split(".")[0]
             name = ((chats.get(chat_id) or {}).get("profile") or {}).get("name", "")
             for n in load_json(path, []):
-                author = n.get("bizId") or (n.get("author") or {}).get("bizId") or ""
+                author = n.get("userBizId") or n.get("bizId") or ""
                 notes_rows.append({
                     "bot_id": bot_id, "chat_id": chat_id, "chat_name": name,
                     "note_id": n.get("noteId") or n.get("id", ""),
                     "created_at": fmt_ts(n.get("createdAt")), "updated_at": fmt_ts(n.get("updatedAt")),
                     "author_id": author, "author_name": owner_name(owners, author),
-                    "content": n.get("content") or n.get("text", ""),
+                    "content": n.get("body") or n.get("content") or "",
                     "raw_json": json.dumps(n, ensure_ascii=False)})
                 s["notes"] += 1
         contacts = load_json(bot_dir / "_contacts.json", [])

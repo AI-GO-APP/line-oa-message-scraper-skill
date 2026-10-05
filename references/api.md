@@ -61,6 +61,8 @@ contactId (= userId), profile{userId, name, friend, iconHash, lastActivityExpire
 tagIds, autoTagIds, done, followedUp, spam, friend, useManualChat, chatAvailable, chatExists
 ```
 
+記事本物件：`noteId`、`body`（內容）、`userBizId`（撰寫的管理員，對 `owners`）、`createdAt`、`updatedAt`。
+
 `chatExists=false` 的好友沒有對話串（加了好友但從沒傳過訊息）。封鎖的人不在好友名單、只在對話串列表，
 兩者合併才是完整的客人名單。2026-10 實測：5,672 位好友中 2,452 位沒有對話串。
 
